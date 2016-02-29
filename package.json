@@ -1,0 +1,17 @@
+{
+  "name": "dpcm-worker",
+  "version": "1.0.0",
+  "description": "JavaScript Web Worker port of https://github.com/gocha/DPCMConverter",
+  "main": "dist/dpcm-worker.js",
+  "author": "but80 <mersenne-sister@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "wav-decoder": "^1.0.0"
+  },
+  "devDependencies": {
+    "gulp": "^3.9.1",
+    "gulp-browserify": "^0.5.1",
+    "gulp-sourcemaps": "^1.6.0",
+    "gulp-typescript": "^2.12.0"
+  }
+}
