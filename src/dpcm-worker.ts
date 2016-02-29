@@ -203,7 +203,7 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 	var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
 
 	// ここからFlMML用コード出力
-	return `#WAV9 $id,${startdelta},$loop,${dpcmStr}`;
+	return `#WAV9 $id,${startdelta},0/*or 1(loop)*/,${dpcmStr}`;
 }
 
 
