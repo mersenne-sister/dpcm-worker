@@ -2219,6 +2219,24 @@ function wav2dpcm(sampleRate, channelData, opts) {
 exports.wav2dpcm = wav2dpcm;
 self.onmessage = function (e) {
     switch (e.data.type) {
+        case 'format':
+            WavDecoder.decode(e.data.buffer)
+                .then(function (audioData) {
+                self.postMessage({
+                    type: 'format',
+                    format: {
+                        sampleRate: audioData.sampleRate,
+                        numberOfChannels: audioData.channelData.length
+                    }
+                });
+            })
+                .catch(function (ex) {
+                self.postMessage({
+                    type: 'error',
+                    error: ex.message
+                });
+            });
+            break;
         case 'convert':
             WavDecoder.decode(e.data.buffer)
                 .then(function (audioData) {
@@ -2238,6 +2256,6 @@ self.onmessage = function (e) {
     }
 };
 
-}).call(this,require("1YiZ5S"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_af6a616.js","/")
+}).call(this,require("1YiZ5S"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_e1464f32.js","/")
 },{"1YiZ5S":4,"buffer":1,"wav-decoder":5}]},{},[12])
 //# sourceMappingURL=dpcm-worker.js.map

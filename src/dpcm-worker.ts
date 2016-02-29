@@ -209,12 +209,34 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 
 
 self.onmessage = function(e) {
+
 	switch (e.data.type) {
-		
-		case 'convert':
-			
+
+		case 'format':
+
 			WavDecoder.decode(e.data.buffer)
-				.then((audioData)=>{
+				.then((audioData) => {
+					self.postMessage({
+						type: 'format',
+						format: {
+							sampleRate: audioData.sampleRate,
+							numberOfChannels: audioData.channelData.length
+						}
+					});
+				})
+				.catch((ex) => {
+					self.postMessage({
+						type: 'error',
+						error: ex.message
+					});
+				});
+
+			break;
+
+		case 'convert':
+
+			WavDecoder.decode(e.data.buffer)
+				.then((audioData) => {
 					var data = wav2dpcm(
 						audioData.sampleRate,
 						audioData.channelData,
@@ -225,13 +247,13 @@ self.onmessage = function(e) {
 						data: data
 					});
 				})
-				.catch((ex)=>{
+				.catch((ex) => {
 					self.postMessage({
 						type: 'error',
 						error: ex.message
 					});
 				});
-			
+
 			break;
 		
 	}
