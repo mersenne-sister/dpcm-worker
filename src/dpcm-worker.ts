@@ -7,6 +7,20 @@ import WavDecoder = require('wav-decoder');
 
 // JavaScript port of https://github.com/gocha/DPCMConverter
 
+export interface IWavFileFormat {
+	sampleRate: number;
+	numberOfChannels: number;
+}
+
+export interface IDPCMOptions {
+	stereoMix?: boolean;
+	stereoLeft?: boolean;
+	normalizeCheck?: boolean;
+	inputVolumeCb?: number;
+	dpcmSampleRateCb?: number;
+	dmcAlignCheck?: boolean;
+}
+
 export const SAMPLERATE_DATAPROVIDER = [
 	{ label: "4.18KHz", data: 0x00 },
 	{ label: "4.71KHz", data: 0x01 },
@@ -31,16 +45,7 @@ const DMC_TABLE = [
 	0x5F0, 0x500, 0x470, 0x400, 0x350, 0x2A0, 0x240, 0x1B0,
 ];
 
-export interface DPCMOptions {
-	stereoMix?: boolean;
-	stereoLeft?: boolean;
-	normalizeCheck?: boolean;
-	inputVolumeCb?: number;
-	dpcmSampleRateCb?: number;
-	dmcAlignCheck?: boolean;
-}
-
-export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?: DPCMOptions): string {
+export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?: IDPCMOptions): string {
 	if (!opts) opts = {};
 
 	var i: number;
@@ -216,12 +221,13 @@ self.onmessage = function(e) {
 
 			WavDecoder.decode(e.data.buffer)
 				.then((audioData) => {
+					var format: IWavFileFormat = {
+						sampleRate: audioData.sampleRate,
+						numberOfChannels: audioData.channelData.length
+					};
 					self.postMessage({
 						type: 'format',
-						format: {
-							sampleRate: audioData.sampleRate,
-							numberOfChannels: audioData.channelData.length
-						}
+						format: format
 					});
 				})
 				.catch((ex) => {

@@ -2032,7 +2032,6 @@ module.exports = InlineWorker;
 /// <reference path="wav-decoder.d.ts" />
 "use strict";
 var WavDecoder = require('wav-decoder');
-// JavaScript port of https://github.com/gocha/DPCMConverter
 exports.SAMPLERATE_DATAPROVIDER = [
     { label: "4.18KHz", data: 0x00 },
     { label: "4.71KHz", data: 0x01 },
@@ -2222,12 +2221,13 @@ self.onmessage = function (e) {
         case 'format':
             WavDecoder.decode(e.data.buffer)
                 .then(function (audioData) {
+                var format = {
+                    sampleRate: audioData.sampleRate,
+                    numberOfChannels: audioData.channelData.length
+                };
                 self.postMessage({
                     type: 'format',
-                    format: {
-                        sampleRate: audioData.sampleRate,
-                        numberOfChannels: audioData.channelData.length
-                    }
+                    format: format
                 });
             })
                 .catch(function (ex) {
@@ -2256,6 +2256,6 @@ self.onmessage = function (e) {
     }
 };
 
-}).call(this,require("1YiZ5S"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_e1464f32.js","/")
+}).call(this,require("1YiZ5S"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_9f12742f.js","/")
 },{"1YiZ5S":4,"buffer":1,"wav-decoder":5}]},{},[12])
 //# sourceMappingURL=dpcm-worker.js.map
