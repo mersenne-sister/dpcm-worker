@@ -2210,11 +2210,11 @@ function wav2dpcm(sampleRate, channelData, opts) {
     dpcmData = dpcmData.subarray(0, j);
     // サイズチェック
     if (dpcmData.length > 0x0ff1) {
-        throw new Error("DPCMとして使用できる長さを超えています");
+        throw new Error('The generated data length is over the limit of DPCM.');
     }
     var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
     // ここからFlMML用コード出力
-    return "#WAV9 $id," + startdelta + ",$loop," + dpcmStr;
+    return "#WAV9 $id," + startdelta + ",0/*or 1(loop)*/," + dpcmStr;
 }
 exports.wav2dpcm = wav2dpcm;
 self.onmessage = function (e) {
@@ -2227,11 +2227,17 @@ self.onmessage = function (e) {
                     type: 'data',
                     data: data
                 });
+            })
+                .catch(function (ex) {
+                self.postMessage({
+                    type: 'error',
+                    error: ex.message
+                });
             });
             break;
     }
 };
 
-}).call(this,require("1YiZ5S"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_ca9bc48c.js","/")
+}).call(this,require("1YiZ5S"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_af6a616.js","/")
 },{"1YiZ5S":4,"buffer":1,"wav-decoder":5}]},{},[12])
 //# sourceMappingURL=dpcm-worker.js.map

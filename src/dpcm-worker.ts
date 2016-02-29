@@ -198,7 +198,7 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 				
 	// サイズチェック
 	if (dpcmData.length > 0x0ff1) {
-		throw new Error("DPCMとして使用できる長さを超えています");
+		throw new Error('The generated data length is over the limit of DPCM.');
 	}
 	var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
 
@@ -223,6 +223,12 @@ self.onmessage = function(e) {
 					self.postMessage({
 						type: 'data',
 						data: data
+					});
+				})
+				.catch((ex)=>{
+					self.postMessage({
+						type: 'error',
+						error: ex.message
 					});
 				});
 			
