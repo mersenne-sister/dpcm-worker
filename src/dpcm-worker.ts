@@ -10,6 +10,11 @@ import WavDecoder = require('wav-decoder');
 export interface IWavFileFormat {
 	sampleRate: number;
 	numberOfChannels: number;
+	sampleLength: number;
+	preview: {
+		max: Float32Array;
+		min: Float32Array;
+	}[];
 }
 
 export interface IDPCMOptions {
@@ -19,6 +24,13 @@ export interface IDPCMOptions {
 	inputVolumeCb?: number;
 	dpcmSampleRateCb?: number;
 	dmcAlignCheck?: boolean;
+	previewSize?: number;
+	loop?: boolean;
+}
+
+export interface IDPCMResult {
+	mml: string;
+	preview?: Float32Array;
 }
 
 export const SAMPLERATE_DATAPROVIDER = [
@@ -45,7 +57,7 @@ const DMC_TABLE = [
 	0x5F0, 0x500, 0x470, 0x400, 0x350, 0x2A0, 0x240, 0x1B0,
 ];
 
-export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?: IDPCMOptions): string {
+export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?: IDPCMOptions): IDPCMResult {
 	if (!opts) opts = {};
 
 	var i: number;
@@ -139,9 +151,19 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 	var dmcBits: number = 0;
 	var dmcIncrease: Boolean = true;
 	var dmcIncreaseLast: Boolean = true;
+	var previewData: Float32Array = new Float32Array(opts.previewSize||512);
+	var previewPos: number = 0;
+	var previewStep: number = Math.ceil(resampdata.length / previewData.length);
+	var previewCount: number = previewStep;
 	j = 0;
 	for (i = 0; i < resampdata.length; i++) {
 		dmcBits >>= 1;
+		
+		previewData[previewPos] = Math.max(previewData[previewPos], Math.abs(resampdata[i]));
+		if (--previewCount == 0) {
+			previewCount = previewStep;
+			previewPos++;
+		}
 
 		var deltaFloat: number = (delta - 0x40) / 0x40;
 		dmcIncrease = (resampdata[i] > deltaFloat);
@@ -208,7 +230,10 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 	var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
 
 	// ここからFlMML用コード出力
-	return `#WAV9 $id,${startdelta},0/*or 1(loop)*/,${dpcmStr}`;
+	return {
+		mml: `#WAV9 $id,${startdelta},${opts.loop?1:0},${dpcmStr}`,
+		preview: previewData
+	};
 }
 
 
@@ -221,13 +246,33 @@ self.onmessage = function(e) {
 
 			WavDecoder.decode(e.data.buffer)
 				.then((audioData) => {
-					var format: IWavFileFormat = {
+					var result: IWavFileFormat = {
 						sampleRate: audioData.sampleRate,
-						numberOfChannels: audioData.channelData.length
+						numberOfChannels: audioData.channelData.length,
+						sampleLength: audioData.channelData[0].length,
+						preview: []
 					};
+					for (var ch=0; ch<audioData.channelData.length; ch++) {
+						var data = audioData.channelData[ch];
+						var preview = {
+							max: new Float32Array(e.data.previewSize||512),
+							min: new Float32Array(e.data.previewSize||512)
+						};
+						result.preview.push(preview);
+						var step = Math.ceil(data.length / preview.max.length);
+						var s = 0;
+						var j = 0;
+						for (var i=0; i<data.length; i++) {
+							preview.max[j] = Math.max(preview.max[j], data[i++]);
+							preview.min[j] = Math.min(preview.min[j], data[i++]);
+							if (step <= ++s) {
+								s=0; j++;
+							}
+						}
+					}
 					self.postMessage({
 						type: 'format',
-						format: format
+						result: result
 					});
 				})
 				.catch((ex) => {
@@ -243,14 +288,14 @@ self.onmessage = function(e) {
 
 			WavDecoder.decode(e.data.buffer)
 				.then((audioData) => {
-					var data = wav2dpcm(
+					var result = wav2dpcm(
 						audioData.sampleRate,
 						audioData.channelData,
 						e.data.options
 					);
 					self.postMessage({
-						type: 'data',
-						data: data
+						type: 'convert',
+						result: result
 					});
 				})
 				.catch((ex) => {
