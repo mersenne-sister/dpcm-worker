@@ -24,6 +24,8 @@ export interface IDPCMOptions {
 	inputVolumeCb?: number;
 	dpcmSampleRateCb?: number;
 	dmcAlignCheck?: boolean;
+	startPosition?: number;
+	endPosition?: number;
 	previewSize?: number;
 	loop?: boolean;
 }
@@ -62,7 +64,13 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 
 	var i: number;
 	var j: number;
-				
+	
+	if (opts.startPosition == null) opts.startPosition = 0;
+	if (opts.endPosition == null) opts.endPosition = channelData[0].length;
+	for (i = 0; i < channelData.length; i++) {
+		channelData[i] = channelData[i].subarray(opts.startPosition, opts.endPosition);
+	}
+	
 	// 前処理(チャンネル選択・ノーマライズ)
 	var samplesNum: number = channelData[0].length;
 	var maxLevel: number = 0.0;
