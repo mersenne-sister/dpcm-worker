@@ -28,6 +28,7 @@ export interface IDPCMOptions {
 	endPosition?: number;
 	previewSize?: number;
 	loop?: boolean;
+	id?: number;
 }
 
 export interface IDPCMResult {
@@ -239,7 +240,7 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 
 	// ここからFlMML用コード出力
 	return {
-		mml: `#WAV9 $id,${startdelta},${opts.loop?1:0},${dpcmStr}`,
+		mml: `#WAV9 ${opts.id==null ? '$id' : opts.id},${startdelta},${opts.loop?1:0},${dpcmStr}`,
 		preview: previewData
 	};
 }

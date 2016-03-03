@@ -1110,8 +1110,8 @@ function assert (test, message) {
   if (!test) throw new Error(message || 'Failed assertion')
 }
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\index.js","/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer")
-},{"BfbGaI":4,"base64-js":2,"buffer":1,"ieee754":3}],2:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\index.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer")
+},{"VCmEsw":4,"base64-js":2,"buffer":1,"ieee754":3}],2:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -1238,8 +1238,8 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib\\b64.js","/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib")
-},{"BfbGaI":4,"buffer":1}],3:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib\\b64.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib")
+},{"VCmEsw":4,"buffer":1}],3:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -1326,8 +1326,8 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754\\index.js","/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754")
-},{"BfbGaI":4,"buffer":1}],4:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754\\index.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754")
+},{"VCmEsw":4,"buffer":1}],4:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 // shim for using process in browser
 
@@ -1393,13 +1393,13 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process\\browser.js","/..\\..\\..\\..\\..\\Documents\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process")
-},{"BfbGaI":4,"buffer":1}],5:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process\\browser.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process")
+},{"VCmEsw":4,"buffer":1}],5:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 module.exports = require("./lib");
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\index.js","/..\\node_modules\\wav-decoder")
-},{"./lib":8,"BfbGaI":4,"buffer":1}],6:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\index.js","/..\\node_modules\\wav-decoder")
+},{"./lib":8,"VCmEsw":4,"buffer":1}],6:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 var InlineWorker = require("inline-worker");
 var DecoderWorker = require("./DecoderWorker");
@@ -1460,8 +1460,8 @@ Decoder.prototype.decode = function decode(buffer) {
 
 module.exports = Decoder;
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\Decoder.js","/..\\node_modules\\wav-decoder\\lib")
-},{"./DecoderWorker":7,"BfbGaI":4,"buffer":1,"inline-worker":11}],7:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\Decoder.js","/..\\node_modules\\wav-decoder\\lib")
+},{"./DecoderWorker":7,"VCmEsw":4,"buffer":1,"inline-worker":11}],7:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 var DataView2 = require("dataview2").DataView2;
 
@@ -1691,13 +1691,13 @@ decoder.self = decoder.util = self;
 
 module.exports = decoder;
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\DecoderWorker.js","/..\\node_modules\\wav-decoder\\lib")
-},{"BfbGaI":4,"buffer":1,"dataview2":9}],8:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\DecoderWorker.js","/..\\node_modules\\wav-decoder\\lib")
+},{"VCmEsw":4,"buffer":1,"dataview2":9}],8:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 module.exports = require("./Decoder");
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\index.js","/..\\node_modules\\wav-decoder\\lib")
-},{"./Decoder":6,"BfbGaI":4,"buffer":1}],9:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\index.js","/..\\node_modules\\wav-decoder\\lib")
+},{"./Decoder":6,"VCmEsw":4,"buffer":1}],9:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 var BufferDataView = require("buffer-dataview");
 
@@ -1720,8 +1720,8 @@ module.exports = {
   Buffer2: Buffer2,
 };
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2")
-},{"BfbGaI":4,"buffer":1,"buffer-dataview":10}],10:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2")
+},{"VCmEsw":4,"buffer":1,"buffer-dataview":10}],10:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 
 /**
@@ -1981,8 +1981,8 @@ DataView.prototype.setFloat64 = function (byteOffset, value, littleEndian) {
   }
 };
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview\\dataview.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview")
-},{"BfbGaI":4,"buffer":1}],11:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview\\dataview.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview")
+},{"VCmEsw":4,"buffer":1}],11:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 var WORKER_ENABLED = !!(global === global.window && global.URL && global.Blob && global.Worker);
 
@@ -2026,8 +2026,8 @@ InlineWorker.prototype.postMessage = function postMessage(data) {
 
 module.exports = InlineWorker;
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\inline-worker\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\inline-worker")
-},{"BfbGaI":4,"buffer":1}],12:[function(require,module,exports){
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\inline-worker\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\inline-worker")
+},{"VCmEsw":4,"buffer":1}],12:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 /// <reference path="wav-decoder.d.ts" />
 "use strict";
@@ -2230,7 +2230,7 @@ function wav2dpcm(sampleRate, channelData, opts) {
     var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
     // ここからFlMML用コード出力
     return {
-        mml: "#WAV9 $id," + startdelta + "," + (opts.loop ? 1 : 0) + "," + dpcmStr,
+        mml: "#WAV9 " + (opts.id == null ? '$id' : opts.id) + "," + startdelta + "," + (opts.loop ? 1 : 0) + "," + dpcmStr,
         preview: previewData
     };
 }
@@ -2296,6 +2296,6 @@ self.onmessage = function (e) {
     }
 };
 
-}).call(this,require("BfbGaI"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_7ef0c441.js","/")
-},{"BfbGaI":4,"buffer":1,"wav-decoder":5}]},{},[12])
+}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_615a2bee.js","/")
+},{"VCmEsw":4,"buffer":1,"wav-decoder":5}]},{},[12])
 //# sourceMappingURL=dpcm-worker.js.map
