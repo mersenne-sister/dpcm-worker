@@ -11,6 +11,8 @@ export interface IWavFileFormat {
 	sampleRate: number;
 	numberOfChannels: number;
 	sampleLength: number;
+	startSilence: number;
+	endSilence: number;
 	preview: {
 		max: Float32Array;
 		min: Float32Array;
@@ -60,6 +62,8 @@ const DMC_TABLE = [
 	0x5F0, 0x500, 0x470, 0x400, 0x350, 0x2A0, 0x240, 0x1B0,
 ];
 
+const SILENCE_THRESHOLD = Math.pow(2.0, -7);
+
 export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?: IDPCMOptions): IDPCMResult {
 	if (!opts) opts = {};
 
@@ -78,47 +82,34 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 	var monodata: Float32Array = new Float32Array(samplesNum);
 	if (channelData.length == 1) {
 		for (i = 0; i < samplesNum; i++) {
-			if (Math.abs(channelData[0][i]) > maxLevel) {
-				maxLevel = Math.abs(channelData[0][i]);
-			}
-			monodata[i] = channelData[0][i];
+			var current = channelData[0][i];
+			maxLevel = Math.max(maxLevel, Math.abs(current));
+			monodata[i] = current;
 		}
 	} else {
 		if (opts.stereoMix) {
 			for (i = 0; i < samplesNum; i++) {
-				var current: number = (channelData[0][i] + channelData[1][i]) / 2;
-				if (Math.abs(current) > maxLevel) {
-					maxLevel = Math.abs(current);
-				}
+				var current = (channelData[0][i] + channelData[1][i]) / 2;
+				maxLevel = Math.max(maxLevel, Math.abs(current));
 				monodata[i] = current;
 			}
 		} else {
-			var channel: number;
-			if (opts.stereoLeft) {
-				channel = 0;
-			} else {
-				channel = 1;
-			}
+			var channel: number = opts.stereoLeft ? 0 : 1;
 			for (i = 0; i < samplesNum; i++) {
-				if (Math.abs(channelData[channel][i]) > maxLevel) {
-					maxLevel = Math.abs(channelData[channel][i]);
-				}
-				monodata[i] = channelData[channel][i];
+				var current = channelData[channel][i];
+				maxLevel = Math.max(maxLevel, Math.abs(current));
+				monodata[i] = current;
 			}
 		}
 	}
-	if (opts.normalizeCheck) {
-		for (i = 0; i < monodata.length; i++) {
-			monodata[i] /= maxLevel;
-		}
-	}
+
 	// 入力音量の調整
-	if (opts.inputVolumeCb != null && opts.inputVolumeCb != 1.0) {
-		var scale: number = opts.inputVolumeCb;
-		for (i = 0; i < monodata.length; i++) {
-			monodata[i] *= scale;
-		}
+	var scale: number = opts.inputVolumeCb == null ? 1.0 : opts.inputVolumeCb;
+	if (opts.normalizeCheck && 0 < maxLevel) scale /= maxLevel;
+	for (i = 0; i < monodata.length; i++) {
+		monodata[i] *= scale;
 	}
+
 	// リサンプリング
 	var dpcmSampleRate: number = sampleRate;
 	var sampleStep: number = 1;
@@ -245,6 +236,47 @@ export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?:
 	};
 }
 
+export function wavFormat(audioData, previewSize: number): IWavFileFormat {
+	var len = audioData.channelData[0].length;
+	var result: IWavFileFormat = {
+		sampleRate: audioData.sampleRate,
+		numberOfChannels: audioData.channelData.length,
+		sampleLength: len,
+		startSilence: len,
+		endSilence: len,
+		preview: []
+	};
+	for (var ch = 0; ch < audioData.channelData.length; ch++) {
+		var data = audioData.channelData[ch];
+		var preview = {
+			max: new Float32Array(previewSize),
+			min: new Float32Array(previewSize)
+		};
+		result.preview.push(preview);
+		var step = Math.ceil(data.length / preview.max.length);
+		var s = 0;
+		var j = 0;
+		var i;
+		for (i = 0; i < data.length; i++) {
+			preview.max[j] = Math.max(preview.max[j], data[i]);
+			preview.min[j] = Math.min(preview.min[j], data[i]);
+			if (step <= ++s) {
+				s = 0; j++;
+			}
+		}
+
+		for (i = 0; i < data.length; i++) {
+			if (SILENCE_THRESHOLD <= Math.abs(data[i])) break;
+		}
+		result.startSilence = Math.min(result.startSilence, i);
+
+		for (i = 0; i < data.length; i++) {
+			if (SILENCE_THRESHOLD <= Math.abs(data[data.length - 1 - i])) break;
+		}
+		result.endSilence = Math.min(result.endSilence, i);
+	}
+	return result;
+}
 
 
 self.onmessage = function(e) {
@@ -255,33 +287,9 @@ self.onmessage = function(e) {
 
 			WavDecoder.decode(e.data.buffer)
 				.then((audioData) => {
-					var result: IWavFileFormat = {
-						sampleRate: audioData.sampleRate,
-						numberOfChannels: audioData.channelData.length,
-						sampleLength: audioData.channelData[0].length,
-						preview: []
-					};
-					for (var ch=0; ch<audioData.channelData.length; ch++) {
-						var data = audioData.channelData[ch];
-						var preview = {
-							max: new Float32Array(e.data.previewSize||512),
-							min: new Float32Array(e.data.previewSize||512)
-						};
-						result.preview.push(preview);
-						var step = Math.ceil(data.length / preview.max.length);
-						var s = 0;
-						var j = 0;
-						for (var i=0; i<data.length; i++) {
-							preview.max[j] = Math.max(preview.max[j], data[i++]);
-							preview.min[j] = Math.min(preview.min[j], data[i++]);
-							if (step <= ++s) {
-								s=0; j++;
-							}
-						}
-					}
 					self.postMessage({
 						type: 'format',
-						result: result
+						result: wavFormat(audioData, e.data.previewSize||512)
 					});
 				})
 				.catch((ex) => {
