@@ -1,5 +1,912 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+module.exports = require("./lib");
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\index.js","/..\\node_modules\\wav-decoder")
+},{"./lib":4,"X3U52g":12,"buffer":9}],2:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+var InlineWorker = require("inline-worker");
+var DecoderWorker = require("./DecoderWorker");
+var instance = null;
+
+function Decoder() {
+  var _this = this;
+
+  this._worker = new InlineWorker(DecoderWorker, DecoderWorker.self);
+  this._worker.onmessage = function(e) {
+    var data = e.data;
+    var callback = _this._callbacks[data.callbackId];
+
+    if (callback) {
+      if (data.type === "decoded") {
+        callback.resolve({
+          sampleRate: data.audioData.sampleRate,
+          channelData: data.audioData.buffers.map(function(buffer) {
+            return new Float32Array(buffer);
+          }),
+        });
+      } else {
+        callback.reject(new Error(data.message));
+      }
+    }
+
+    _this._callbacks[data.callbackId] = null;
+  };
+  this._callbacks = [];
+}
+
+Decoder.decode = function decode(buffer) {
+  if (instance === null) {
+    instance = new Decoder();
+  }
+  return instance.decode(buffer);
+};
+
+Decoder.prototype.decode = function decode(buffer) {
+  var _this = this;
+
+  return new Promise(function(resolve, reject) {
+    var callbackId = _this._callbacks.length;
+
+    _this._callbacks.push({ resolve: resolve, reject: reject });
+
+    if (buffer && buffer.buffer instanceof ArrayBuffer) {
+      if (!buffer.readUInt8) {
+        buffer = buffer.buffer;
+      }
+    }
+
+    _this._worker.postMessage({
+      type: "decode", buffer: buffer, callbackId: callbackId,
+    }, [ buffer ]);
+  });
+}
+
+module.exports = Decoder;
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\Decoder.js","/..\\node_modules\\wav-decoder\\lib")
+},{"./DecoderWorker":3,"X3U52g":12,"buffer":9,"inline-worker":7}],3:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+var DataView2 = require("dataview2").DataView2;
+
+var self = {};
+
+function decoder() {
+  self.onmessage = function(e) {
+    if (e.data.type === "decode") {
+      self.decode(e.data.callbackId, e.data.buffer);
+    }
+  };
+
+  var formats = {
+    0x0001: "lpcm",
+    0x0003: "lpcm",
+  };
+
+  self.decode = function(callbackId, buffer) {
+    function successCallback(audioData) {
+      self.postMessage({
+        type: "decoded",
+        callbackId: callbackId,
+        audioData: audioData,
+      }, [ audioData.buffers ]);
+    }
+
+    function errorCallback(err) {
+      self.postMessage({
+        type: "error",
+        callbackId: callbackId,
+        message: err.message,
+      });
+    }
+
+    self.decodeWav(buffer).then(successCallback, errorCallback);
+  };
+
+  self.decodeWav = function(buffer) {
+    return new Promise(function(resolve) {
+      var reader = new BufferReader(buffer);
+
+      if (reader.readString(4) !== "RIFF") {
+        throw new Error("Invalid WAV file");
+      }
+
+      reader.readUint32(); // file length
+
+      if (reader.readString(4) !== "WAVE") {
+        throw new Error("Invalid WAV file");
+      }
+
+      var format = null;
+      var audioData = null;
+
+      do {
+        var chunkType = reader.readString(4);
+        var chunkSize = reader.readUint32();
+        switch (chunkType) {
+          case "fmt ":
+            format = self.decodeFormat(reader, chunkSize);
+            break;
+          case "data":
+            audioData = self.decodeData(reader, chunkSize, format);
+            break;
+          default:
+            reader.skip(chunkSize);
+            break;
+        }
+      } while (audioData === null);
+
+      return resolve(audioData);
+    });
+  };
+
+  self.decodeFormat = function(reader, chunkSize) {
+    var formatId = reader.readUint16();
+
+    if (!formats.hasOwnProperty(formatId)) {
+      throw new Error("Unsupported format in WAV file");
+    }
+
+    var format = {
+      formatId: formatId,
+      floatingPoint: formatId === 0x0003,
+      numberOfChannels: reader.readUint16(),
+      sampleRate: reader.readUint32(),
+      byteRate: reader.readUint32(),
+      blockSize: reader.readUint16(),
+      bitDepth: reader.readUint16(),
+    };
+    reader.skip(chunkSize - 16);
+
+    return format;
+  };
+
+  self.decodeData = function(reader, chunkSize, format) {
+    var length = Math.floor(chunkSize / format.blockSize);
+    var channelData = new Array(format.numberOfChannels);
+
+    for (var ch = 0; ch < format.numberOfChannels; ch++) {
+      channelData[ch] = new Float32Array(length);
+    }
+
+    reader.readPCM(channelData, length, format);
+
+    var buffers = channelData.map(function(data) {
+      return data.buffer;
+    });
+
+    return {
+      numberOfChannels: format.numberOfChannels,
+      length: length,
+      sampleRate: format.sampleRate,
+      buffers: buffers,
+    };
+  };
+
+  function BufferReader(buffer) {
+    if (buffer instanceof ArrayBuffer) {
+      this.view = new DataView(buffer);
+    } else {
+      this.view = new DataView2(buffer);
+    }
+    this.length = this.view.byteLength;
+    this.pos = 0;
+  }
+
+  BufferReader.prototype.skip = function(n) {
+    for (var i = 0; i < n; i++) {
+      this.view.getUint8(this.pos++);
+    }
+  };
+
+  BufferReader.prototype.readUint8 = function() {
+    var data = this.view.getUint8(this.pos);
+    this.pos += 1;
+    return data;
+  };
+
+  BufferReader.prototype.readInt16 = function() {
+    var data = this.view.getInt16(this.pos, true);
+    this.pos += 2;
+    return data;
+  };
+
+  BufferReader.prototype.readUint16 = function() {
+    var data = this.view.getUint16(this.pos, true);
+    this.pos += 2;
+    return data;
+  };
+
+  BufferReader.prototype.readUint32 = function() {
+    var data = this.view.getUint32(this.pos, true);
+    this.pos += 4;
+    return data;
+  };
+
+  BufferReader.prototype.readString = function(len) {
+    var data = "";
+    for (var i = 0; i < len; i++) {
+      data += String.fromCharCode(this.readUint8());
+    }
+    return data;
+  };
+
+  BufferReader.prototype.readPCM8 = function() {
+    var data = (this.view.getUint8(this.pos) - 128) / 128;
+    this.pos += 1;
+    return data;
+  };
+
+  BufferReader.prototype.readPCM16 = function() {
+    var data = this.view.getInt16(this.pos, true) / 32768;
+    this.pos += 2;
+    return data;
+  };
+
+  BufferReader.prototype.readPCM24 = function() {
+    var x0 = this.view.getUint8(this.pos + 0);
+    var x1 = this.view.getUint8(this.pos + 1);
+    var x2 = this.view.getUint8(this.pos + 2);
+    var xx = x0 + (x1 << 8) + (x2  << 16);
+    var data = ((xx & 0x800000) ? xx - 16777216 : xx) / 8388608;
+    this.pos += 3;
+    return data;
+  };
+
+  BufferReader.prototype.readPCM32 = function() {
+    var data = this.view.getInt32(this.pos, true) / 2147483648;
+    this.pos += 4;
+    return data;
+  };
+
+  BufferReader.prototype.readPCM32F = function() {
+    var data = this.view.getFloat32(this.pos, true);
+    this.pos += 4;
+    return data;
+  };
+
+  BufferReader.prototype.readPCM64F = function() {
+    var data = this.view.getFloat64(this.pos, true);
+    this.pos += 8;
+    return data;
+  };
+
+  BufferReader.prototype.readPCM = function(channelData, length, format) {
+    var numberOfChannels = format.numberOfChannels;
+    var method = "readPCM" + format.bitDepth;
+
+    if (format.floatingPoint) {
+      method += "F";
+    }
+
+    if (!this[method]) {
+      throw new Error("not suppoerted bit depth " + format.bitDepth);
+    }
+
+    for (var i = 0; i < length; i++) {
+      for (var ch = 0; ch < numberOfChannels; ch++) {
+        channelData[ch][i] = this[method]();
+      }
+    }
+  };
+}
+
+decoder.self = decoder.util = self;
+
+module.exports = decoder;
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\DecoderWorker.js","/..\\node_modules\\wav-decoder\\lib")
+},{"X3U52g":12,"buffer":9,"dataview2":5}],4:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+module.exports = require("./Decoder");
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\index.js","/..\\node_modules\\wav-decoder\\lib")
+},{"./Decoder":2,"X3U52g":12,"buffer":9}],5:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+var BufferDataView = require("buffer-dataview");
+
+function DataView2(buffer) {
+  if (global.Buffer && buffer instanceof global.Buffer) {
+    return new BufferDataView(buffer);
+  }
+  return new DataView(buffer);
+}
+
+function Buffer2(n) {
+  if (global.Buffer) {
+    return new global.Buffer(n);
+  }
+  return new Uint8Array(n).buffer;
+}
+
+module.exports = {
+  DataView2: DataView2,
+  Buffer2: Buffer2,
+};
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2")
+},{"X3U52g":12,"buffer":9,"buffer-dataview":6}],6:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+
+/**
+ * Module exports.
+ */
+
+module.exports = DataView;
+
+/**
+ * Very minimal `DataView` implementation that wraps (doesn't *copy*)
+ * Node.js Buffer instances.
+ *
+ *  Spec: http://www.khronos.org/registry/typedarray/specs/latest/#8
+ *  MDN: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Typed_arrays/DataView
+ *
+ * @param {Buffer} buffer
+ * @param {Number} byteOffset (optional)
+ * @param {Number} byteLength (optional)
+ * @api public
+ */
+
+function DataView (buffer, byteOffset, byteLength) {
+  if (!(this instanceof DataView)) throw new TypeError('Constructor DataView requires \'new\'');
+  if (!buffer || null == buffer.length) throw new TypeError('First argument to DataView constructor must be a Buffer');
+  if (null == byteOffset) byteOffset = 0;
+  if (null == byteLength) byteLength = buffer.length;
+  this.buffer = buffer;
+  this.byteOffset = byteOffset | 0;
+  this.byteLength = byteLength | 0;
+}
+
+/**
+ * "Get" functions.
+ */
+
+DataView.prototype.getInt8 = function (byteOffset) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  return this.buffer.readInt8(offset);
+};
+
+DataView.prototype.getUint8 = function (byteOffset) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  return this.buffer.readUInt8(offset);
+};
+
+DataView.prototype.getInt16 = function (byteOffset, littleEndian) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    return this.buffer.readInt16LE(offset);
+  } else {
+    return this.buffer.readInt16BE(offset);
+  }
+};
+
+DataView.prototype.getUint16 = function (byteOffset, littleEndian) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    return this.buffer.readUInt16LE(offset);
+  } else {
+    return this.buffer.readUInt16BE(offset);
+  }
+};
+
+DataView.prototype.getInt32 = function (byteOffset, littleEndian) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    return this.buffer.readInt32LE(offset);
+  } else {
+    return this.buffer.readInt32BE(offset);
+  }
+};
+
+DataView.prototype.getUint32 = function (byteOffset, littleEndian) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    return this.buffer.readUInt32LE(offset);
+  } else {
+    return this.buffer.readUInt32BE(offset);
+  }
+};
+
+DataView.prototype.getFloat32 = function (byteOffset, littleEndian) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    return this.buffer.readFloatLE(offset);
+  } else {
+    return this.buffer.readFloatBE(offset);
+  }
+};
+
+DataView.prototype.getFloat64 = function (byteOffset, littleEndian) {
+  if (arguments.length < 1) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    return this.buffer.readDoubleLE(offset);
+  } else {
+    return this.buffer.readDoubleBE(offset);
+  }
+};
+
+/**
+ * "Set" functions.
+ */
+
+DataView.prototype.setInt8 = function (byteOffset, value) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  // wrap the `value` from -128 to 128
+  value = ((value + 128) & 255) - 128;
+  this.buffer.writeInt8(value, offset);
+};
+
+DataView.prototype.setUint8 = function (byteOffset, value) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  // wrap the `value` from 0 to 255
+  value = value & 255;
+  this.buffer.writeUInt8(value, offset);
+};
+
+DataView.prototype.setInt16 = function (byteOffset, value, littleEndian) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  // wrap the `value` from -32768 to 32768
+  value = ((value + 32768) & 65535) - 32768;
+  if (littleEndian) {
+    this.buffer.writeInt16LE(value, offset);
+  } else {
+    this.buffer.writeInt16BE(value, offset);
+  }
+};
+
+DataView.prototype.setUint16 = function (byteOffset, value, littleEndian) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  // wrap the `value` from 0 to 65535
+  value = value & 65535;
+  if (littleEndian) {
+    this.buffer.writeUInt16LE(value, offset);
+  } else {
+    this.buffer.writeUInt16BE(value, offset);
+  }
+};
+
+DataView.prototype.setInt32 = function (byteOffset, value, littleEndian) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  // wrap the `value` from -2147483648 to 2147483648
+  value |= 0;
+  if (littleEndian) {
+    this.buffer.writeInt32LE(value, offset);
+  } else {
+    this.buffer.writeInt32BE(value, offset);
+  }
+};
+
+DataView.prototype.setUint32 = function (byteOffset, value, littleEndian) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  // wrap the `value` from 0 to 4294967295
+  value = value >>> 0;
+  if (littleEndian) {
+    this.buffer.writeUInt32LE(value, offset);
+  } else {
+    this.buffer.writeUInt32BE(value, offset);
+  }
+};
+
+DataView.prototype.setFloat32 = function (byteOffset, value, littleEndian) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    this.buffer.writeFloatLE(value, offset);
+  } else {
+    this.buffer.writeFloatBE(value, offset);
+  }
+};
+
+DataView.prototype.setFloat64 = function (byteOffset, value, littleEndian) {
+  if (arguments.length < 2) throw new TypeError('invalid_argument');
+  var offset = this.byteOffset + (byteOffset | 0);
+  var max = this.byteOffset + this.byteLength - 1;
+  if (offset < this.byteOffset || offset > max) {
+    throw new RangeError('Offset is outside the bounds of the DataView');
+  }
+  if (littleEndian) {
+    this.buffer.writeDoubleLE(value, offset);
+  } else {
+    this.buffer.writeDoubleBE(value, offset);
+  }
+};
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview\\dataview.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview")
+},{"X3U52g":12,"buffer":9}],7:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+var WORKER_ENABLED = !!(global === global.window && global.URL && global.Blob && global.Worker);
+
+function InlineWorker(func, self) {
+  var _this = this;
+  var functionBody;
+
+  self = self || {};
+
+  if (WORKER_ENABLED) {
+    functionBody = func.toString().trim().match(
+      /^function\s*\w*\s*\([\w\s,]*\)\s*{([\w\W]*?)}$/
+    )[1];
+
+    return new global.Worker(global.URL.createObjectURL(
+      new global.Blob([ functionBody ], { type: "text/javascript" })
+    ));
+  }
+
+  function postMessage(data) {
+    setTimeout(function() {
+      _this.onmessage({ data: data });
+    }, 0);
+  }
+
+  this.self = self;
+  this.self.postMessage = postMessage;
+
+  setTimeout(function() {
+    func.call(self, self);
+  }, 0);
+}
+
+InlineWorker.prototype.postMessage = function postMessage(data) {
+  var _this = this;
+
+  setTimeout(function() {
+    _this.self.onmessage({ data: data });
+  }, 0);
+};
+
+module.exports = InlineWorker;
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\inline-worker\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\inline-worker")
+},{"X3U52g":12,"buffer":9}],8:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
+/// <reference path="wav-decoder.d.ts" />
+"use strict";
+var WavDecoder = require('wav-decoder');
+exports.SAMPLERATE_DATAPROVIDER = [
+    { label: "4.18KHz", data: 0x00 },
+    { label: "4.71KHz", data: 0x01 },
+    { label: "5.26KHz", data: 0x02 },
+    { label: "5.59KHz", data: 0x03 },
+    { label: "6.26KHz", data: 0x04 },
+    { label: "7.05KHz", data: 0x05 },
+    { label: "7.92KHz", data: 0x06 },
+    { label: "8.36KHz", data: 0x07 },
+    { label: "9.42KHz", data: 0x08 },
+    { label: "11.18KHz", data: 0x09 },
+    { label: "12.60KHz", data: 0x0a },
+    { label: "13.98KHz", data: 0x0b },
+    { label: "16.88KHz", data: 0x0c },
+    { label: "21.30KHz", data: 0x0d },
+    { label: "24.86KHz", data: 0x0e },
+    { label: "33.14KHz", data: 0x0f }
+];
+var DMC_TABLE = [
+    0xD60, 0xBE0, 0xAA0, 0xA00, 0x8F0, 0x7F0, 0x710, 0x6B0,
+    0x5F0, 0x500, 0x470, 0x400, 0x350, 0x2A0, 0x240, 0x1B0,
+];
+var SILENCE_THRESHOLD = Math.pow(2.0, -6);
+function wav2dpcm(sampleRate, channelData, opts) {
+    if (!opts)
+        opts = {};
+    var i;
+    var j;
+    if (opts.startPosition == null)
+        opts.startPosition = 0;
+    if (opts.endPosition == null)
+        opts.endPosition = channelData[0].length;
+    for (i = 0; i < channelData.length; i++) {
+        channelData[i] = channelData[i].subarray(opts.startPosition, opts.endPosition);
+    }
+    // 前処理(チャンネル選択・ノーマライズ)
+    var samplesNum = channelData[0].length;
+    var maxLevel = 0.0;
+    var monodata = new Float32Array(samplesNum);
+    if (channelData.length == 1) {
+        for (i = 0; i < samplesNum; i++) {
+            var current = channelData[0][i];
+            maxLevel = Math.max(maxLevel, Math.abs(current));
+            monodata[i] = current;
+        }
+    }
+    else {
+        if (opts.stereoMix) {
+            for (i = 0; i < samplesNum; i++) {
+                var current = (channelData[0][i] + channelData[1][i]) / 2;
+                maxLevel = Math.max(maxLevel, Math.abs(current));
+                monodata[i] = current;
+            }
+        }
+        else {
+            var channel = opts.stereoLeft ? 0 : 1;
+            for (i = 0; i < samplesNum; i++) {
+                var current = channelData[channel][i];
+                maxLevel = Math.max(maxLevel, Math.abs(current));
+                monodata[i] = current;
+            }
+        }
+    }
+    // 入力音量の調整
+    var scale = opts.inputVolumeCb == null ? 1.0 : opts.inputVolumeCb;
+    if (opts.normalizeCheck && 0 < maxLevel)
+        scale /= maxLevel;
+    for (i = 0; i < monodata.length; i++) {
+        monodata[i] *= scale;
+    }
+    // リサンプリング
+    var dpcmSampleRate = sampleRate;
+    var sampleStep = 1;
+    if (opts.dpcmSampleRateCb != null && opts.dpcmSampleRateCb != -1) {
+        dpcmSampleRate = ((1789772.5 * 8) / DMC_TABLE[opts.dpcmSampleRateCb]);
+        // サンプルレートの差が1.0未満なら変換しない
+        if (Math.abs(dpcmSampleRate - sampleRate) >= 1.0) {
+            sampleStep = dpcmSampleRate / sampleRate;
+        }
+    }
+    var sampleCount = sampleStep;
+    var resampdata = new Float32Array(monodata.length * (sampleStep + 1) + 128);
+    j = 0;
+    i = 0;
+    while (i < monodata.length) {
+        while (sampleCount > 0.0) {
+            resampdata[j++] = monodata[i];
+            sampleCount -= 1.0;
+        }
+        while (sampleCount <= 0.0) {
+            sampleCount += sampleStep;
+            ++i;
+        }
+    }
+    // DPCM再生サイズ境界調整
+    if (opts.dmcAlignCheck) {
+        // 出力が 1+16n バイトになるよう入力サンプルを追加
+        var lastSample = resampdata[j - 1];
+        while ((resampdata.length - 8) % 128 != 0) {
+            resampdata[j++] = lastSample;
+        }
+    }
+    resampdata = resampdata.subarray(0, j);
+    // ここからDMCconvベースの変換処理
+    var dpcmData = new Uint8Array(Math.ceil(resampdata.length / 8));
+    var startdelta = Math.round((resampdata[0] + 1.0) / 2.0 * 127.0);
+    var delta = startdelta;
+    var dmcShift = 8;
+    var dmcBits = 0;
+    var dmcIncrease = true;
+    var dmcIncreaseLast = true;
+    var previewData = new Float32Array(opts.previewSize || 512);
+    var previewPos = 0;
+    var previewStep = Math.ceil(resampdata.length / previewData.length);
+    var previewCount = previewStep;
+    j = 0;
+    for (i = 0; i < resampdata.length; i++) {
+        dmcBits >>= 1;
+        previewData[previewPos] = Math.max(previewData[previewPos], Math.abs(resampdata[i]));
+        if (--previewCount == 0) {
+            previewCount = previewStep;
+            previewPos++;
+        }
+        var deltaFloat = (delta - 0x40) / 0x40;
+        dmcIncrease = (resampdata[i] > deltaFloat);
+        // 等しい場合は次のサンプルに基づいて決定(気休め)
+        if (resampdata[i] == deltaFloat && (i + 1) < resampdata.length) {
+            dmcIncrease = (resampdata[i + 1] > deltaFloat);
+            // 次まで等しい場合は直前の変化に揃える(超気休め)
+            if (resampdata[i + 1] == deltaFloat) {
+                dmcIncrease = dmcIncreaseLast;
+            }
+        }
+        if (dmcIncrease) {
+            if (delta < 126) {
+                delta += 2;
+            }
+            dmcBits |= 0x80;
+        }
+        else {
+            if (delta > 1) {
+                delta -= 2;
+            }
+        }
+        dmcIncreaseLast = dmcIncrease;
+        if (--dmcShift == 0) {
+            dpcmData[j++] = dmcBits;
+            dmcShift = 8;
+            dmcBits = 0;
+        }
+    }
+    // 初期音量に戻るまで出力
+    //if(backToInitVolCheck.selected){
+    //	while(delta != startdelta){
+    //		dmcBits >>= 1;
+    //		if(delta < startdelta){
+    //			delta += 2;
+    //			dmcBits |= 0x80;
+    //		}else{
+    //			delta -= 2;
+    //		}
+    //		if(--dmcShift == 0){
+    //			dpcmData[j++] = dmcBits;
+    //			dmcShift = 8;
+    //			dmcBits = 0;
+    //		}
+    //	}
+    //}
+    // 末尾の余りビットを出力
+    if (dmcShift != 8) {
+        // 最終音量を保つようにして出力
+        var dmcMask = (1 << dmcShift) - 1;
+        dmcBits >>= (dmcShift - 1);
+        dmcBits |= 0x55 & ~dmcMask;
+        dpcmData[j++] = dmcBits;
+    }
+    dpcmData = dpcmData.subarray(0, j);
+    // サイズチェック
+    if (dpcmData.length > 0x0ff1) {
+        throw new Error('The generated data length is over the limit of DPCM.');
+    }
+    var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
+    // ここからFlMML用コード出力
+    return {
+        mml: "#WAV9 " + (opts.id == null ? '$id' : opts.id) + "," + startdelta + "," + (opts.loop ? 1 : 0) + "," + dpcmStr,
+        preview: previewData
+    };
+}
+exports.wav2dpcm = wav2dpcm;
+function wavFormat(audioData, previewSize) {
+    var len = audioData.channelData[0].length;
+    var result = {
+        sampleRate: audioData.sampleRate,
+        numberOfChannels: audioData.channelData.length,
+        sampleLength: len,
+        startSilence: len,
+        endSilence: len,
+        preview: []
+    };
+    for (var ch = 0; ch < audioData.channelData.length; ch++) {
+        var data = audioData.channelData[ch];
+        var preview = {
+            max: new Float32Array(previewSize),
+            min: new Float32Array(previewSize)
+        };
+        result.preview.push(preview);
+        var step = Math.ceil(data.length / preview.max.length);
+        var s = 0;
+        var j = 0;
+        var i;
+        for (i = 0; i < data.length; i++) {
+            preview.max[j] = Math.max(preview.max[j], data[i]);
+            preview.min[j] = Math.min(preview.min[j], data[i]);
+            if (step <= ++s) {
+                s = 0;
+                j++;
+            }
+        }
+        for (i = 0; i < data.length; i++) {
+            if (SILENCE_THRESHOLD <= Math.abs(data[i]))
+                break;
+        }
+        result.startSilence = Math.min(result.startSilence, i);
+        for (i = 0; i < data.length; i++) {
+            if (SILENCE_THRESHOLD <= Math.abs(data[data.length - 1 - i]))
+                break;
+        }
+        result.endSilence = Math.min(result.endSilence, i);
+    }
+    return result;
+}
+exports.wavFormat = wavFormat;
+self.onmessage = function (e) {
+    switch (e.data.type) {
+        case 'format':
+            WavDecoder.decode(e.data.buffer)
+                .then(function (audioData) {
+                self.postMessage({
+                    type: 'format',
+                    result: wavFormat(audioData, e.data.previewSize || 512)
+                });
+            })
+                .catch(function (ex) {
+                self.postMessage({
+                    type: 'error',
+                    error: ex.message
+                });
+            });
+            break;
+        case 'convert':
+            WavDecoder.decode(e.data.buffer)
+                .then(function (audioData) {
+                var result = wav2dpcm(audioData.sampleRate, audioData.channelData, e.data.options);
+                self.postMessage({
+                    type: 'convert',
+                    result: result
+                });
+            })
+                .catch(function (ex) {
+                self.postMessage({
+                    type: 'error',
+                    error: ex.message
+                });
+            });
+            break;
+    }
+};
+
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_6b0337a0.js","/")
+},{"X3U52g":12,"buffer":9,"wav-decoder":1}],9:[function(require,module,exports){
+(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -1110,8 +2017,8 @@ function assert (test, message) {
   if (!test) throw new Error(message || 'Failed assertion')
 }
 
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\index.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer")
-},{"VCmEsw":4,"base64-js":2,"buffer":1,"ieee754":3}],2:[function(require,module,exports){
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\index.js","/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer")
+},{"X3U52g":12,"base64-js":10,"buffer":9,"ieee754":11}],10:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -1238,8 +2145,8 @@ var lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	exports.fromByteArray = uint8ToBase64
 }(typeof exports === 'undefined' ? (this.base64js = {}) : exports))
 
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib\\b64.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib")
-},{"VCmEsw":4,"buffer":1}],3:[function(require,module,exports){
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib\\b64.js","/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\base64-js\\lib")
+},{"X3U52g":12,"buffer":9}],11:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -1326,8 +2233,8 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754\\index.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754")
-},{"VCmEsw":4,"buffer":1}],4:[function(require,module,exports){
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754\\index.js","/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\buffer\\node_modules\\ieee754")
+},{"X3U52g":12,"buffer":9}],12:[function(require,module,exports){
 (function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
 // shim for using process in browser
 
@@ -1393,913 +2300,6 @@ process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
 
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process\\browser.js","/..\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process")
-},{"VCmEsw":4,"buffer":1}],5:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-module.exports = require("./lib");
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\index.js","/..\\node_modules\\wav-decoder")
-},{"./lib":8,"VCmEsw":4,"buffer":1}],6:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-var InlineWorker = require("inline-worker");
-var DecoderWorker = require("./DecoderWorker");
-var instance = null;
-
-function Decoder() {
-  var _this = this;
-
-  this._worker = new InlineWorker(DecoderWorker, DecoderWorker.self);
-  this._worker.onmessage = function(e) {
-    var data = e.data;
-    var callback = _this._callbacks[data.callbackId];
-
-    if (callback) {
-      if (data.type === "decoded") {
-        callback.resolve({
-          sampleRate: data.audioData.sampleRate,
-          channelData: data.audioData.buffers.map(function(buffer) {
-            return new Float32Array(buffer);
-          }),
-        });
-      } else {
-        callback.reject(new Error(data.message));
-      }
-    }
-
-    _this._callbacks[data.callbackId] = null;
-  };
-  this._callbacks = [];
-}
-
-Decoder.decode = function decode(buffer) {
-  if (instance === null) {
-    instance = new Decoder();
-  }
-  return instance.decode(buffer);
-};
-
-Decoder.prototype.decode = function decode(buffer) {
-  var _this = this;
-
-  return new Promise(function(resolve, reject) {
-    var callbackId = _this._callbacks.length;
-
-    _this._callbacks.push({ resolve: resolve, reject: reject });
-
-    if (buffer && buffer.buffer instanceof ArrayBuffer) {
-      if (!buffer.readUInt8) {
-        buffer = buffer.buffer;
-      }
-    }
-
-    _this._worker.postMessage({
-      type: "decode", buffer: buffer, callbackId: callbackId,
-    }, [ buffer ]);
-  });
-}
-
-module.exports = Decoder;
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\Decoder.js","/..\\node_modules\\wav-decoder\\lib")
-},{"./DecoderWorker":7,"VCmEsw":4,"buffer":1,"inline-worker":11}],7:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-var DataView2 = require("dataview2").DataView2;
-
-var self = {};
-
-function decoder() {
-  self.onmessage = function(e) {
-    if (e.data.type === "decode") {
-      self.decode(e.data.callbackId, e.data.buffer);
-    }
-  };
-
-  var formats = {
-    0x0001: "lpcm",
-    0x0003: "lpcm",
-  };
-
-  self.decode = function(callbackId, buffer) {
-    function successCallback(audioData) {
-      self.postMessage({
-        type: "decoded",
-        callbackId: callbackId,
-        audioData: audioData,
-      }, [ audioData.buffers ]);
-    }
-
-    function errorCallback(err) {
-      self.postMessage({
-        type: "error",
-        callbackId: callbackId,
-        message: err.message,
-      });
-    }
-
-    self.decodeWav(buffer).then(successCallback, errorCallback);
-  };
-
-  self.decodeWav = function(buffer) {
-    return new Promise(function(resolve) {
-      var reader = new BufferReader(buffer);
-
-      if (reader.readString(4) !== "RIFF") {
-        throw new Error("Invalid WAV file");
-      }
-
-      reader.readUint32(); // file length
-
-      if (reader.readString(4) !== "WAVE") {
-        throw new Error("Invalid WAV file");
-      }
-
-      var format = null;
-      var audioData = null;
-
-      do {
-        var chunkType = reader.readString(4);
-        var chunkSize = reader.readUint32();
-        switch (chunkType) {
-          case "fmt ":
-            format = self.decodeFormat(reader, chunkSize);
-            break;
-          case "data":
-            audioData = self.decodeData(reader, chunkSize, format);
-            break;
-          default:
-            reader.skip(chunkSize);
-            break;
-        }
-      } while (audioData === null);
-
-      return resolve(audioData);
-    });
-  };
-
-  self.decodeFormat = function(reader, chunkSize) {
-    var formatId = reader.readUint16();
-
-    if (!formats.hasOwnProperty(formatId)) {
-      throw new Error("Unsupported format in WAV file");
-    }
-
-    var format = {
-      formatId: formatId,
-      floatingPoint: formatId === 0x0003,
-      numberOfChannels: reader.readUint16(),
-      sampleRate: reader.readUint32(),
-      byteRate: reader.readUint32(),
-      blockSize: reader.readUint16(),
-      bitDepth: reader.readUint16(),
-    };
-    reader.skip(chunkSize - 16);
-
-    return format;
-  };
-
-  self.decodeData = function(reader, chunkSize, format) {
-    var length = Math.floor(chunkSize / format.blockSize);
-    var channelData = new Array(format.numberOfChannels);
-
-    for (var ch = 0; ch < format.numberOfChannels; ch++) {
-      channelData[ch] = new Float32Array(length);
-    }
-
-    reader.readPCM(channelData, length, format);
-
-    var buffers = channelData.map(function(data) {
-      return data.buffer;
-    });
-
-    return {
-      numberOfChannels: format.numberOfChannels,
-      length: length,
-      sampleRate: format.sampleRate,
-      buffers: buffers,
-    };
-  };
-
-  function BufferReader(buffer) {
-    if (buffer instanceof ArrayBuffer) {
-      this.view = new DataView(buffer);
-    } else {
-      this.view = new DataView2(buffer);
-    }
-    this.length = this.view.byteLength;
-    this.pos = 0;
-  }
-
-  BufferReader.prototype.skip = function(n) {
-    for (var i = 0; i < n; i++) {
-      this.view.getUint8(this.pos++);
-    }
-  };
-
-  BufferReader.prototype.readUint8 = function() {
-    var data = this.view.getUint8(this.pos);
-    this.pos += 1;
-    return data;
-  };
-
-  BufferReader.prototype.readInt16 = function() {
-    var data = this.view.getInt16(this.pos, true);
-    this.pos += 2;
-    return data;
-  };
-
-  BufferReader.prototype.readUint16 = function() {
-    var data = this.view.getUint16(this.pos, true);
-    this.pos += 2;
-    return data;
-  };
-
-  BufferReader.prototype.readUint32 = function() {
-    var data = this.view.getUint32(this.pos, true);
-    this.pos += 4;
-    return data;
-  };
-
-  BufferReader.prototype.readString = function(len) {
-    var data = "";
-    for (var i = 0; i < len; i++) {
-      data += String.fromCharCode(this.readUint8());
-    }
-    return data;
-  };
-
-  BufferReader.prototype.readPCM8 = function() {
-    var data = (this.view.getUint8(this.pos) - 128) / 128;
-    this.pos += 1;
-    return data;
-  };
-
-  BufferReader.prototype.readPCM16 = function() {
-    var data = this.view.getInt16(this.pos, true) / 32768;
-    this.pos += 2;
-    return data;
-  };
-
-  BufferReader.prototype.readPCM24 = function() {
-    var x0 = this.view.getUint8(this.pos + 0);
-    var x1 = this.view.getUint8(this.pos + 1);
-    var x2 = this.view.getUint8(this.pos + 2);
-    var xx = x0 + (x1 << 8) + (x2  << 16);
-    var data = ((xx & 0x800000) ? xx - 16777216 : xx) / 8388608;
-    this.pos += 3;
-    return data;
-  };
-
-  BufferReader.prototype.readPCM32 = function() {
-    var data = this.view.getInt32(this.pos, true) / 2147483648;
-    this.pos += 4;
-    return data;
-  };
-
-  BufferReader.prototype.readPCM32F = function() {
-    var data = this.view.getFloat32(this.pos, true);
-    this.pos += 4;
-    return data;
-  };
-
-  BufferReader.prototype.readPCM64F = function() {
-    var data = this.view.getFloat64(this.pos, true);
-    this.pos += 8;
-    return data;
-  };
-
-  BufferReader.prototype.readPCM = function(channelData, length, format) {
-    var numberOfChannels = format.numberOfChannels;
-    var method = "readPCM" + format.bitDepth;
-
-    if (format.floatingPoint) {
-      method += "F";
-    }
-
-    if (!this[method]) {
-      throw new Error("not suppoerted bit depth " + format.bitDepth);
-    }
-
-    for (var i = 0; i < length; i++) {
-      for (var ch = 0; ch < numberOfChannels; ch++) {
-        channelData[ch][i] = this[method]();
-      }
-    }
-  };
-}
-
-decoder.self = decoder.util = self;
-
-module.exports = decoder;
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\DecoderWorker.js","/..\\node_modules\\wav-decoder\\lib")
-},{"VCmEsw":4,"buffer":1,"dataview2":9}],8:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-module.exports = require("./Decoder");
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\lib\\index.js","/..\\node_modules\\wav-decoder\\lib")
-},{"./Decoder":6,"VCmEsw":4,"buffer":1}],9:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-var BufferDataView = require("buffer-dataview");
-
-function DataView2(buffer) {
-  if (global.Buffer && buffer instanceof global.Buffer) {
-    return new BufferDataView(buffer);
-  }
-  return new DataView(buffer);
-}
-
-function Buffer2(n) {
-  if (global.Buffer) {
-    return new global.Buffer(n);
-  }
-  return new Uint8Array(n).buffer;
-}
-
-module.exports = {
-  DataView2: DataView2,
-  Buffer2: Buffer2,
-};
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2")
-},{"VCmEsw":4,"buffer":1,"buffer-dataview":10}],10:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-
-/**
- * Module exports.
- */
-
-module.exports = DataView;
-
-/**
- * Very minimal `DataView` implementation that wraps (doesn't *copy*)
- * Node.js Buffer instances.
- *
- *  Spec: http://www.khronos.org/registry/typedarray/specs/latest/#8
- *  MDN: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Typed_arrays/DataView
- *
- * @param {Buffer} buffer
- * @param {Number} byteOffset (optional)
- * @param {Number} byteLength (optional)
- * @api public
- */
-
-function DataView (buffer, byteOffset, byteLength) {
-  if (!(this instanceof DataView)) throw new TypeError('Constructor DataView requires \'new\'');
-  if (!buffer || null == buffer.length) throw new TypeError('First argument to DataView constructor must be a Buffer');
-  if (null == byteOffset) byteOffset = 0;
-  if (null == byteLength) byteLength = buffer.length;
-  this.buffer = buffer;
-  this.byteOffset = byteOffset | 0;
-  this.byteLength = byteLength | 0;
-}
-
-/**
- * "Get" functions.
- */
-
-DataView.prototype.getInt8 = function (byteOffset) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  return this.buffer.readInt8(offset);
-};
-
-DataView.prototype.getUint8 = function (byteOffset) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  return this.buffer.readUInt8(offset);
-};
-
-DataView.prototype.getInt16 = function (byteOffset, littleEndian) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    return this.buffer.readInt16LE(offset);
-  } else {
-    return this.buffer.readInt16BE(offset);
-  }
-};
-
-DataView.prototype.getUint16 = function (byteOffset, littleEndian) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    return this.buffer.readUInt16LE(offset);
-  } else {
-    return this.buffer.readUInt16BE(offset);
-  }
-};
-
-DataView.prototype.getInt32 = function (byteOffset, littleEndian) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    return this.buffer.readInt32LE(offset);
-  } else {
-    return this.buffer.readInt32BE(offset);
-  }
-};
-
-DataView.prototype.getUint32 = function (byteOffset, littleEndian) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    return this.buffer.readUInt32LE(offset);
-  } else {
-    return this.buffer.readUInt32BE(offset);
-  }
-};
-
-DataView.prototype.getFloat32 = function (byteOffset, littleEndian) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    return this.buffer.readFloatLE(offset);
-  } else {
-    return this.buffer.readFloatBE(offset);
-  }
-};
-
-DataView.prototype.getFloat64 = function (byteOffset, littleEndian) {
-  if (arguments.length < 1) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    return this.buffer.readDoubleLE(offset);
-  } else {
-    return this.buffer.readDoubleBE(offset);
-  }
-};
-
-/**
- * "Set" functions.
- */
-
-DataView.prototype.setInt8 = function (byteOffset, value) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  // wrap the `value` from -128 to 128
-  value = ((value + 128) & 255) - 128;
-  this.buffer.writeInt8(value, offset);
-};
-
-DataView.prototype.setUint8 = function (byteOffset, value) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  // wrap the `value` from 0 to 255
-  value = value & 255;
-  this.buffer.writeUInt8(value, offset);
-};
-
-DataView.prototype.setInt16 = function (byteOffset, value, littleEndian) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  // wrap the `value` from -32768 to 32768
-  value = ((value + 32768) & 65535) - 32768;
-  if (littleEndian) {
-    this.buffer.writeInt16LE(value, offset);
-  } else {
-    this.buffer.writeInt16BE(value, offset);
-  }
-};
-
-DataView.prototype.setUint16 = function (byteOffset, value, littleEndian) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  // wrap the `value` from 0 to 65535
-  value = value & 65535;
-  if (littleEndian) {
-    this.buffer.writeUInt16LE(value, offset);
-  } else {
-    this.buffer.writeUInt16BE(value, offset);
-  }
-};
-
-DataView.prototype.setInt32 = function (byteOffset, value, littleEndian) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  // wrap the `value` from -2147483648 to 2147483648
-  value |= 0;
-  if (littleEndian) {
-    this.buffer.writeInt32LE(value, offset);
-  } else {
-    this.buffer.writeInt32BE(value, offset);
-  }
-};
-
-DataView.prototype.setUint32 = function (byteOffset, value, littleEndian) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  // wrap the `value` from 0 to 4294967295
-  value = value >>> 0;
-  if (littleEndian) {
-    this.buffer.writeUInt32LE(value, offset);
-  } else {
-    this.buffer.writeUInt32BE(value, offset);
-  }
-};
-
-DataView.prototype.setFloat32 = function (byteOffset, value, littleEndian) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    this.buffer.writeFloatLE(value, offset);
-  } else {
-    this.buffer.writeFloatBE(value, offset);
-  }
-};
-
-DataView.prototype.setFloat64 = function (byteOffset, value, littleEndian) {
-  if (arguments.length < 2) throw new TypeError('invalid_argument');
-  var offset = this.byteOffset + (byteOffset | 0);
-  var max = this.byteOffset + this.byteLength - 1;
-  if (offset < this.byteOffset || offset > max) {
-    throw new RangeError('Offset is outside the bounds of the DataView');
-  }
-  if (littleEndian) {
-    this.buffer.writeDoubleLE(value, offset);
-  } else {
-    this.buffer.writeDoubleBE(value, offset);
-  }
-};
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview\\dataview.js","/..\\node_modules\\wav-decoder\\node_modules\\dataview2\\node_modules\\buffer-dataview")
-},{"VCmEsw":4,"buffer":1}],11:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-var WORKER_ENABLED = !!(global === global.window && global.URL && global.Blob && global.Worker);
-
-function InlineWorker(func, self) {
-  var _this = this;
-  var functionBody;
-
-  self = self || {};
-
-  if (WORKER_ENABLED) {
-    functionBody = func.toString().trim().match(
-      /^function\s*\w*\s*\([\w\s,]*\)\s*{([\w\W]*?)}$/
-    )[1];
-
-    return new global.Worker(global.URL.createObjectURL(
-      new global.Blob([ functionBody ], { type: "text/javascript" })
-    ));
-  }
-
-  function postMessage(data) {
-    setTimeout(function() {
-      _this.onmessage({ data: data });
-    }, 0);
-  }
-
-  this.self = self;
-  this.self.postMessage = postMessage;
-
-  setTimeout(function() {
-    func.call(self, self);
-  }, 0);
-}
-
-InlineWorker.prototype.postMessage = function postMessage(data) {
-  var _this = this;
-
-  setTimeout(function() {
-    _this.self.onmessage({ data: data });
-  }, 0);
-};
-
-module.exports = InlineWorker;
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/..\\node_modules\\wav-decoder\\node_modules\\inline-worker\\index.js","/..\\node_modules\\wav-decoder\\node_modules\\inline-worker")
-},{"VCmEsw":4,"buffer":1}],12:[function(require,module,exports){
-(function (process,global,Buffer,__argument0,__argument1,__argument2,__argument3,__filename,__dirname){
-/// <reference path="wav-decoder.d.ts" />
-"use strict";
-var WavDecoder = require('wav-decoder');
-exports.SAMPLERATE_DATAPROVIDER = [
-    { label: "4.18KHz", data: 0x00 },
-    { label: "4.71KHz", data: 0x01 },
-    { label: "5.26KHz", data: 0x02 },
-    { label: "5.59KHz", data: 0x03 },
-    { label: "6.26KHz", data: 0x04 },
-    { label: "7.05KHz", data: 0x05 },
-    { label: "7.92KHz", data: 0x06 },
-    { label: "8.36KHz", data: 0x07 },
-    { label: "9.42KHz", data: 0x08 },
-    { label: "11.18KHz", data: 0x09 },
-    { label: "12.60KHz", data: 0x0a },
-    { label: "13.98KHz", data: 0x0b },
-    { label: "16.88KHz", data: 0x0c },
-    { label: "21.30KHz", data: 0x0d },
-    { label: "24.86KHz", data: 0x0e },
-    { label: "33.14KHz", data: 0x0f }
-];
-var DMC_TABLE = [
-    0xD60, 0xBE0, 0xAA0, 0xA00, 0x8F0, 0x7F0, 0x710, 0x6B0,
-    0x5F0, 0x500, 0x470, 0x400, 0x350, 0x2A0, 0x240, 0x1B0,
-];
-var SILENCE_THRESHOLD = Math.pow(2.0, -7);
-function wav2dpcm(sampleRate, channelData, opts) {
-    if (!opts)
-        opts = {};
-    var i;
-    var j;
-    if (opts.startPosition == null)
-        opts.startPosition = 0;
-    if (opts.endPosition == null)
-        opts.endPosition = channelData[0].length;
-    for (i = 0; i < channelData.length; i++) {
-        channelData[i] = channelData[i].subarray(opts.startPosition, opts.endPosition);
-    }
-    // 前処理(チャンネル選択・ノーマライズ)
-    var samplesNum = channelData[0].length;
-    var maxLevel = 0.0;
-    var monodata = new Float32Array(samplesNum);
-    if (channelData.length == 1) {
-        for (i = 0; i < samplesNum; i++) {
-            var current = channelData[0][i];
-            maxLevel = Math.max(maxLevel, Math.abs(current));
-            monodata[i] = current;
-        }
-    }
-    else {
-        if (opts.stereoMix) {
-            for (i = 0; i < samplesNum; i++) {
-                var current = (channelData[0][i] + channelData[1][i]) / 2;
-                maxLevel = Math.max(maxLevel, Math.abs(current));
-                monodata[i] = current;
-            }
-        }
-        else {
-            var channel = opts.stereoLeft ? 0 : 1;
-            for (i = 0; i < samplesNum; i++) {
-                var current = channelData[channel][i];
-                maxLevel = Math.max(maxLevel, Math.abs(current));
-                monodata[i] = current;
-            }
-        }
-    }
-    // 入力音量の調整
-    var scale = opts.inputVolumeCb == null ? 1.0 : opts.inputVolumeCb;
-    if (opts.normalizeCheck && 0 < maxLevel)
-        scale /= maxLevel;
-    for (i = 0; i < monodata.length; i++) {
-        monodata[i] *= scale;
-    }
-    // リサンプリング
-    var dpcmSampleRate = sampleRate;
-    var sampleStep = 1;
-    if (opts.dpcmSampleRateCb != null && opts.dpcmSampleRateCb != -1) {
-        dpcmSampleRate = ((1789772.5 * 8) / DMC_TABLE[opts.dpcmSampleRateCb]);
-        // サンプルレートの差が1.0未満なら変換しない
-        if (Math.abs(dpcmSampleRate - sampleRate) >= 1.0) {
-            sampleStep = dpcmSampleRate / sampleRate;
-        }
-    }
-    var sampleCount = sampleStep;
-    var resampdata = new Float32Array(monodata.length * (sampleStep + 1) + 128);
-    j = 0;
-    i = 0;
-    while (i < monodata.length) {
-        while (sampleCount > 0.0) {
-            resampdata[j++] = monodata[i];
-            sampleCount -= 1.0;
-        }
-        while (sampleCount <= 0.0) {
-            sampleCount += sampleStep;
-            ++i;
-        }
-    }
-    // DPCM再生サイズ境界調整
-    if (opts.dmcAlignCheck) {
-        // 出力が 1+16n バイトになるよう入力サンプルを追加
-        var lastSample = resampdata[j - 1];
-        while ((resampdata.length - 8) % 128 != 0) {
-            resampdata[j++] = lastSample;
-        }
-    }
-    resampdata = resampdata.subarray(0, j);
-    // ここからDMCconvベースの変換処理
-    var dpcmData = new Uint8Array(Math.ceil(resampdata.length / 8));
-    var startdelta = Math.round((resampdata[0] + 1.0) / 2.0 * 127.0);
-    var delta = startdelta;
-    var dmcShift = 8;
-    var dmcBits = 0;
-    var dmcIncrease = true;
-    var dmcIncreaseLast = true;
-    var previewData = new Float32Array(opts.previewSize || 512);
-    var previewPos = 0;
-    var previewStep = Math.ceil(resampdata.length / previewData.length);
-    var previewCount = previewStep;
-    j = 0;
-    for (i = 0; i < resampdata.length; i++) {
-        dmcBits >>= 1;
-        previewData[previewPos] = Math.max(previewData[previewPos], Math.abs(resampdata[i]));
-        if (--previewCount == 0) {
-            previewCount = previewStep;
-            previewPos++;
-        }
-        var deltaFloat = (delta - 0x40) / 0x40;
-        dmcIncrease = (resampdata[i] > deltaFloat);
-        // 等しい場合は次のサンプルに基づいて決定(気休め)
-        if (resampdata[i] == deltaFloat && (i + 1) < resampdata.length) {
-            dmcIncrease = (resampdata[i + 1] > deltaFloat);
-            // 次まで等しい場合は直前の変化に揃える(超気休め)
-            if (resampdata[i + 1] == deltaFloat) {
-                dmcIncrease = dmcIncreaseLast;
-            }
-        }
-        if (dmcIncrease) {
-            if (delta < 126) {
-                delta += 2;
-            }
-            dmcBits |= 0x80;
-        }
-        else {
-            if (delta > 1) {
-                delta -= 2;
-            }
-        }
-        dmcIncreaseLast = dmcIncrease;
-        if (--dmcShift == 0) {
-            dpcmData[j++] = dmcBits;
-            dmcShift = 8;
-            dmcBits = 0;
-        }
-    }
-    // 初期音量に戻るまで出力
-    //if(backToInitVolCheck.selected){
-    //	while(delta != startdelta){
-    //		dmcBits >>= 1;
-    //		if(delta < startdelta){
-    //			delta += 2;
-    //			dmcBits |= 0x80;
-    //		}else{
-    //			delta -= 2;
-    //		}
-    //		if(--dmcShift == 0){
-    //			dpcmData[j++] = dmcBits;
-    //			dmcShift = 8;
-    //			dmcBits = 0;
-    //		}
-    //	}
-    //}
-    // 末尾の余りビットを出力
-    if (dmcShift != 8) {
-        // 最終音量を保つようにして出力
-        var dmcMask = (1 << dmcShift) - 1;
-        dmcBits >>= (dmcShift - 1);
-        dmcBits |= 0x55 & ~dmcMask;
-        dpcmData[j++] = dmcBits;
-    }
-    dpcmData = dpcmData.subarray(0, j);
-    // サイズチェック
-    if (dpcmData.length > 0x0ff1) {
-        throw new Error('The generated data length is over the limit of DPCM.');
-    }
-    var dpcmStr = btoa(String.fromCharCode.apply(null, new Uint8Array(dpcmData)));
-    // ここからFlMML用コード出力
-    return {
-        mml: "#WAV9 " + (opts.id == null ? '$id' : opts.id) + "," + startdelta + "," + (opts.loop ? 1 : 0) + "," + dpcmStr,
-        preview: previewData
-    };
-}
-exports.wav2dpcm = wav2dpcm;
-function wavFormat(audioData, previewSize) {
-    var len = audioData.channelData[0].length;
-    var result = {
-        sampleRate: audioData.sampleRate,
-        numberOfChannels: audioData.channelData.length,
-        sampleLength: len,
-        startSilence: len,
-        endSilence: len,
-        preview: []
-    };
-    for (var ch = 0; ch < audioData.channelData.length; ch++) {
-        var data = audioData.channelData[ch];
-        var preview = {
-            max: new Float32Array(previewSize),
-            min: new Float32Array(previewSize)
-        };
-        result.preview.push(preview);
-        var step = Math.ceil(data.length / preview.max.length);
-        var s = 0;
-        var j = 0;
-        var i;
-        for (i = 0; i < data.length; i++) {
-            preview.max[j] = Math.max(preview.max[j], data[i]);
-            preview.min[j] = Math.min(preview.min[j], data[i]);
-            if (step <= ++s) {
-                s = 0;
-                j++;
-            }
-        }
-        for (i = 0; i < data.length; i++) {
-            if (SILENCE_THRESHOLD <= Math.abs(data[i]))
-                break;
-        }
-        result.startSilence = Math.min(result.startSilence, i);
-        for (i = 0; i < data.length; i++) {
-            if (SILENCE_THRESHOLD <= Math.abs(data[data.length - 1 - i]))
-                break;
-        }
-        result.endSilence = Math.min(result.endSilence, i);
-    }
-    return result;
-}
-exports.wavFormat = wavFormat;
-self.onmessage = function (e) {
-    switch (e.data.type) {
-        case 'format':
-            WavDecoder.decode(e.data.buffer)
-                .then(function (audioData) {
-                self.postMessage({
-                    type: 'format',
-                    result: wavFormat(audioData, e.data.previewSize || 512)
-                });
-            })
-                .catch(function (ex) {
-                self.postMessage({
-                    type: 'error',
-                    error: ex.message
-                });
-            });
-            break;
-        case 'convert':
-            WavDecoder.decode(e.data.buffer)
-                .then(function (audioData) {
-                var result = wav2dpcm(audioData.sampleRate, audioData.channelData, e.data.options);
-                self.postMessage({
-                    type: 'convert',
-                    result: result
-                });
-            })
-                .catch(function (ex) {
-                self.postMessage({
-                    type: 'error',
-                    error: ex.message
-                });
-            });
-            break;
-    }
-};
-
-}).call(this,require("VCmEsw"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/fake_bc67a4b9.js","/")
-},{"VCmEsw":4,"buffer":1,"wav-decoder":5}]},{},[12])
+}).call(this,require("X3U52g"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer,arguments[3],arguments[4],arguments[5],arguments[6],"/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process\\browser.js","/M:\\mydocs\\workspace\\mmlxr\\dpcm-worker\\node_modules\\gulp-browserify\\node_modules\\browserify\\node_modules\\process")
+},{"X3U52g":12,"buffer":9}]},{},[8])
 //# sourceMappingURL=dpcm-worker.js.map

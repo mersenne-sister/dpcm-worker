@@ -62,7 +62,7 @@ const DMC_TABLE = [
 	0x5F0, 0x500, 0x470, 0x400, 0x350, 0x2A0, 0x240, 0x1B0,
 ];
 
-const SILENCE_THRESHOLD = Math.pow(2.0, -7);
+const SILENCE_THRESHOLD = Math.pow(2.0, -6);
 
 export function wav2dpcm(sampleRate: number, channelData: Float32Array[], opts?: IDPCMOptions): IDPCMResult {
 	if (!opts) opts = {};
